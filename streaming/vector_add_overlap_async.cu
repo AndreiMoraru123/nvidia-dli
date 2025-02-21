@@ -78,6 +78,11 @@ int main() {
   initWith<<<numberOfBlocks, threadsPerBlock, 0, stream2>>>(4, b, N);
   initWith<<<numberOfBlocks, threadsPerBlock, 0, stream3>>>(0, c, N);
 
+  /*
+   * Synchronize - we are using different non-standard streams for
+   * initialisation and calcs, so we need to explicitly synchronize to ensure
+   * all data has been initialised before starting the calculations
+   */
   asyncErrInit = cudaDeviceSynchronize();
   if (asyncErrInit != cudaSuccess)
     printf("Error init: %s\n", cudaGetErrorString(asyncErrInit));
@@ -86,9 +91,11 @@ int main() {
     cudaStream_t stream;
     cudaStreamCreate(&stream);
 
-    addVectorsInto<<<numberOfBlocks, threadsPerBlock>>>(
+    addVectorsInto<<<numberOfBlocks / 4, threadsPerBlock, 0, stream>>>(
         &c[i * N / 4], &a[i * N / 4], &b[i * N / 4], N / 4);
-    cudaMemcpyAsync(&h_c[i * N /4], &c[i * N/4], size/4, cudaMemcpyDeviceToHost, stream);
+    cudaMemcpyAsync(&h_c[i * N / 4], &c[i * N / 4], size / 4,
+                    cudaMemcpyDeviceToHost, stream);
+    cudaStreamDestroy(stream);
   }
 
   addVectorsErr = cudaGetLastError();
@@ -97,7 +104,7 @@ int main() {
 
   asyncErrAdd = cudaDeviceSynchronize();
   if (asyncErrAdd != cudaSuccess)
-    printf("Error: %s\n", cudaGetErrorString(asyncErrAdd));
+    printf("Error add: %s\n", cudaGetErrorString(asyncErrAdd));
 
   checkElementsAre(7, h_c, N);
 
